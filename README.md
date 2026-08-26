@@ -1,211 +1,586 @@
-# 🎓 EduPilot — Your Personal AI Learning Mentor
+# 🎓 EduPilot
 
-> AI-powered personalized learning platform that helps students create structured learning roadmaps, master concepts with AI explanations, take adaptive quizzes, and monitor progress — all guided by Google Gemini AI.
+<div align="center">
 
-Built for the **Horizon Hackathon** 🏆 | Theme: **AI with Education**
+### 🚀 AI-Powered Personalized Learning Platform
 
----
+*Learn Smarter • Practice Better • Track Progress*
 
-## ✨ Features
+![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi)
+![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248?style=for-the-badge&logo=mongodb)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript)
+![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4-06B6D4?style=for-the-badge&logo=tailwindcss)
+![Gemini AI](https://img.shields.io/badge/Google-Gemini%20AI-4285F4?style=for-the-badge&logo=google)
 
-| Feature | Description |
-|---|---|
-| 🗺️ **AI Roadmap Generator** | Personalized weekly learning plans based on goals, pace, and skill level |
-| 📚 **Smart AI Lessons** | Gemini-powered explanations with real-world examples and step-by-step guidance |
-| 🧠 **Adaptive Quizzes** | AI-generated MCQs with instant scoring and detailed explanations |
-| 📊 **Progress Dashboard** | Visual tracking of completion, quiz scores, streaks, and weak topics |
-| 🎯 **Smart Recommendations** | AI suggests what to study next based on quiz performance |
-| ⚡ **Daily Missions** | Automatic daily learning goals to maintain momentum |
+</div>
 
 ---
 
-## 🏗️ Architecture
+# 📖 Overview
 
+EduPilot is an **AI-powered personalized learning platform** designed to help students learn more efficiently through intelligent roadmaps, AI-generated notes, adaptive quizzes, progress analytics, and an interactive AI Tutor.
+
+Instead of following a one-size-fits-all learning approach, EduPilot creates a personalized learning experience based on each student's goals and progress.
+
+---
+
+# ✨ Key Features
+
+## 🔐 Authentication
+
+- Secure User Registration
+- Login System
+- JWT Authentication
+- Password Reset
+- Protected Routes
+
+---
+
+## 🎯 Personalized Learning Roadmap
+
+Generate customized learning paths based on:
+
+- Learning Goal
+- Current Skill Level
+- Available Study Time
+- Preferred Pace
+
+Students receive structured daily learning plans instead of random topics.
+
+---
+
+## 📚 AI Notes Generator
+
+Generate high-quality notes for any topic.
+
+Features include:
+
+- Clean formatting
+- Beginner-friendly explanations
+- Key concepts
+- Important points
+- Revision-friendly structure
+
+---
+
+## 🤖 AI Tutor
+
+Students can ask questions naturally.
+
+Example:
+
+> Explain Binary Search with a real-life example.
+
+The AI Tutor provides:
+
+- Instant explanations
+- Step-by-step guidance
+- Beginner-friendly answers
+- Follow-up learning support
+
+---
+
+## 📝 Smart Quiz Engine
+
+Automatically generates quizzes for completed topics.
+
+Features:
+
+- Multiple Choice Questions
+- Instant Evaluation
+- Score Analysis
+- Correct Answers
+- Performance Tracking
+
+---
+
+## 📊 Dashboard
+
+Track learning performance using:
+
+- Learning Progress
+- Topics Completed
+- Quiz Scores
+- Daily Learning Status
+- Personalized Recommendations
+
+---
+
+## 🎨 Modern User Interface
+
+- Responsive Design
+- Dark Theme
+- Smooth Animations
+- Glassmorphism Components
+- Interactive Cards
+- Modern Dashboard
+- Mobile Friendly
+
+---
+
+# 🏗 System Architecture
+
+```text
+                ┌──────────────────────────┐
+                │        Frontend          │
+                │      Next.js + React     │
+                └────────────┬─────────────┘
+                             │
+                      REST API Calls
+                             │
+                ┌────────────▼─────────────┐
+                │      FastAPI Backend     │
+                │ Authentication           │
+                │ Roadmap Engine           │
+                │ AI Tutor                 │
+                │ Notes Generator          │
+                │ Quiz Engine              │
+                │ Dashboard API            │
+                └────────────┬─────────────┘
+                             │
+          ┌──────────────────┴─────────────────┐
+          │                                    │
+┌─────────▼─────────┐              ┌──────────▼──────────┐
+│     MongoDB       │              │     Gemini AI       │
+│ Users             │              │ AI Explanations     │
+│ Roadmaps          │              │ Notes               │
+│ Progress          │              │ Quizzes             │
+│ Quiz Results      │              │ Recommendations     │
+└───────────────────┘              └─────────────────────┘
 ```
-┌─────────────────────┐     REST API     ┌──────────────────────┐     AI      ┌─────────────────┐
-│   Next.js Frontend  │ ◄──────────────► │   FastAPI Backend    │ ◄─────────► │  Google Gemini  │
-│   (Vercel)          │                  │   (Render)           │             │  API            │
-└─────────────────────┘                  └──────────┬───────────┘             └─────────────────┘
-                                                    │
-                                                    ▼
-                                         ┌──────────────────────┐
-                                         │     MongoDB          │
-                                         │     (Atlas)          │
-                                         └──────────────────────┘
-```
 
 ---
 
-## 🛠️ Tech Stack
+# 🛠 Technology Stack
 
-### Frontend
-- **Next.js 15** — React framework with App Router
-- **TypeScript** — Type-safe development
-- **Tailwind CSS** — Utility-first styling
-- **Framer Motion** — Smooth animations
-- **Recharts** — Beautiful data visualization
-- **Lucide React** — Icon system
+## Frontend
 
-### Backend
-- **FastAPI** — High-performance async Python API
-- **Motor** — Async MongoDB driver
-- **Pydantic** — Data validation and serialization
-
-### AI
-- **Google Gemini 2.0 Flash** — Roadmap generation, topic explanation, quiz creation, recommendations
-
-### Database
-- **MongoDB** — Document store for students, roadmaps, quizzes, and progress
+- Next.js
+- React
+- TypeScript
+- Tailwind CSS
+- Framer Motion
+- Recharts
+- Lucide Icons
 
 ---
 
-## 📸 Screenshots
+## Backend
 
-> Screenshots will be added after deployment.
+- FastAPI
+- Python
+- Motor
+- Pydantic
+- JWT Authentication
 
 ---
 
-## 🚀 Quick Start
+## Database
 
-### Prerequisites
+- MongoDB
+
+---
+
+## Artificial Intelligence
+
+- Google Gemini API
+
+Used for:
+
+- Topic Explanation
+- AI Tutor
+- Notes Generation
+- Quiz Generation
+- Learning Recommendations
+
+---
+
+# 📸 Screenshots
+
+## Landing Page
+
+> *(Add Screenshot Here)*
+
+---
+
+## Dashboard
+
+> *(Add Screenshot Here)*
+
+---
+
+## AI Tutor
+
+> *(Add Screenshot Here)*
+
+---
+
+## Notes Generator
+
+> *(Add Screenshot Here)*
+
+---
+
+## Learning Roadmap
+
+> *(Add Screenshot Here)*
+
+---
+
+## Quiz Module
+
+> *(Add Screenshot Here)*
+
+---
+
+# ⭐ Highlights
+
+- AI-Powered Learning
+- Personalized Study Roadmaps
+- Interactive AI Tutor
+- Smart Notes Generation
+- Adaptive Quizzes
+- Progress Analytics
+- Responsive UI
+- Secure Authentication
+
+---
+
+# 🚀 Getting Started
+
+## Prerequisites
+
+Before running EduPilot locally, ensure the following software is installed:
+
 - Node.js 18+
 - Python 3.10+
-- MongoDB (local or Atlas)
+- MongoDB Community Server or MongoDB Atlas
+- Git
 - Google Gemini API Key
 
-### 1. Clone the repository
+---
+
+# ⚙️ Installation
+
+## 1. Clone the Repository
+
 ```bash
-git clone https://github.com/your-username/edupilot.git
+git clone https://github.com/karan-sharma-aiml/edupilot.git
 cd edupilot
 ```
 
-### 2. Backend Setup
+---
+
+## 2. Backend Setup
+
+Navigate to the backend folder.
+
 ```bash
 cd backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your GEMINI_API_KEY and MONGODB_URI
-
-# Start the server
-uvicorn main:app --reload --port 8000
 ```
 
-### 3. Frontend Setup
+Install Python dependencies.
+
+```bash
+pip install -r requirements.txt
+```
+
+Create a `.env` file using the example.
+
+```env
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+
+MONGODB_URI=mongodb://localhost:27017
+
+MONGODB_DB=edupilot
+
+JWT_SECRET_KEY=your_secret_key
+
+JWT_ALGORITHM=HS256
+```
+
+Run the backend server.
+
+```bash
+py -m uvicorn main:app --reload
+```
+
+Backend runs at
+
+```
+http://localhost:8000
+```
+
+---
+
+## 3. Frontend Setup
+
+Open another terminal.
+
 ```bash
 cd frontend
+```
 
-# Install dependencies
+Install dependencies.
+
+```bash
 npm install
+```
 
-# Configure environment
-cp .env.local.example .env.local
-# Edit .env.local if your backend is not on localhost:8000
+Create
 
-# Start the dev server
+```
+.env.local
+```
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+Run frontend.
+
+```bash
 npm run dev
 ```
 
-### 4. Open the app
-Navigate to [http://localhost:3000](http://localhost:3000)
-
----
-
-## 📡 API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/generate-roadmap` | Create student + AI-generated roadmap |
-| GET | `/api/roadmap/{student_id}` | Fetch student's roadmap |
-| GET | `/api/todays-topic/{student_id}` | Get current topic to study |
-| POST | `/api/complete-topic` | Mark a topic as completed |
-| POST | `/api/explain-topic` | AI explanation for a topic |
-| POST | `/api/generate-quiz` | Generate adaptive quiz |
-| POST | `/api/submit-quiz` | Submit quiz and get results |
-| GET | `/api/dashboard/{student_id}` | Get progress dashboard data |
-
----
-
-## 📁 Project Structure
+Frontend runs at
 
 ```
-edupilot/
-├── backend/
-│   ├── api/              # FastAPI route handlers
-│   │   ├── roadmap.py
-│   │   ├── learning.py
-│   │   ├── quiz.py
-│   │   └── dashboard.py
-│   ├── models/           # Pydantic data models
-│   ├── schemas/          # Request/Response schemas
-│   ├── services/         # Business logic
-│   │   ├── gemini_service.py    # Gemini AI integration
-│   │   ├── roadmap_service.py   # Roadmap CRUD
-│   │   ├── quiz_service.py      # Quiz logic
-│   │   └── dashboard_service.py # Dashboard aggregation
-│   ├── main.py           # FastAPI app entry
-│   ├── config.py         # Settings
-│   └── database.py       # MongoDB connection
-│
-├── frontend/
-│   └── src/
-│       ├── app/          # Next.js pages (App Router)
-│       │   ├── page.tsx              # Landing page
-│       │   ├── onboarding/           # Student onboarding
-│       │   ├── roadmap/[studentId]/  # Roadmap view
-│       │   ├── learn/[studentId]/    # AI lesson view
-│       │   ├── quiz/[studentId]/     # Adaptive quiz
-│       │   └── dashboard/[studentId]/ # Progress dashboard
-│       ├── components/   # Reusable UI components
-│       │   └── shared/   # GlassCard, GradientText, etc.
-│       ├── services/     # API client
-│       └── types/        # TypeScript interfaces
-│
-└── README.md
+http://localhost:3000
 ```
 
 ---
 
-## 🗄️ Database Collections
+# 📂 Project Structure
 
-| Collection | Description |
-|------------|-------------|
-| `students` | Student profiles and preferences |
-| `roadmaps` | AI-generated learning roadmaps |
-| `sessions` | Learning session records |
-| `quizzes` | Generated quiz questions |
-| `quiz_results` | Quiz scores and answers |
-| `recommendations` | AI-generated study recommendations |
+```
+EduPilot
+│
+├── backend
+│   ├── api
+│   ├── middleware
+│   ├── models
+│   ├── schemas
+│   ├── services
+│   ├── tests
+│   ├── config.py
+│   ├── database.py
+│   ├── main.py
+│   └── requirements.txt
+│
+├── frontend
+│   ├── public
+│   ├── src
+│   │   ├── app
+│   │   ├── components
+│   │   ├── hooks
+│   │   ├── services
+│   │   ├── styles
+│   │   └── types
+│   │
+│   ├── package.json
+│   └── next.config.ts
+│
+├── README.md
+└── .gitignore
+```
 
 ---
 
-## 🔮 Future Scope
+# 🔑 Core Modules
 
-- 🔐 Authentication (OAuth/NextAuth)
-- 📱 Mobile-responsive PWA
-- 🤝 Peer study groups
-- 📹 Video content integration
-- 🏆 Gamification (badges, leaderboards)
-- 💬 AI chat for topic doubts
-- 📅 Calendar integration
-- 📈 Advanced analytics and learning patterns
-- 🌐 Multi-language support
+### Authentication
+
+- Register
+- Login
+- JWT Authentication
+- Protected Routes
+- Password Reset
 
 ---
 
-## 👥 Team
+### AI Tutor
 
-Built with ❤️ for the **Horizon Hackathon**
+- Ask Questions
+- AI Responses
+- Topic Assistance
 
 ---
 
-## 📄 License
+### AI Notes Generator
 
-MIT License — feel free to use, modify, and distribute.
+- Generate Notes
+- Revision Notes
+- Important Points
+- Key Concepts
+
+---
+
+### Learning Roadmap
+
+- Personalized Roadmap
+- Daily Topics
+- Progress Tracking
+
+---
+
+### Quiz Engine
+
+- AI Generated Questions
+- Auto Evaluation
+- Score Analysis
+
+---
+
+### Dashboard
+
+- Learning Progress
+- Quiz Performance
+- Recommendations
+- Learning Statistics
+
+---
+
+# 📊 Database Collections
+
+| Collection | Purpose |
+|------------|---------|
+| users | User Accounts |
+| roadmaps | Learning Roadmaps |
+| quizzes | Quiz Data |
+| sessions | Learning Sessions |
+| recommendations | AI Recommendations |
+| progress | Learning Progress |
+
+---
+
+# 🔒 Security
+
+EduPilot includes:
+
+- JWT Authentication
+- Password Hashing
+- Protected API Routes
+- Request Validation
+- Secure Environment Variables
+- MongoDB Validation
+
+---
+
+# 📈 Future Improvements
+
+- Voice-based AI Tutor
+- AI Interview Preparation
+- PDF Notes Export
+- Certificate Generation
+- Leaderboard
+- Gamification
+- Study Planner
+- Calendar Integration
+- Mobile Application
+- Offline Learning
+- Multi-language Support
+
+---
+
+# 🤝 Contributing
+
+Contributions are welcome.
+
+1. Fork the repository
+
+2. Create a new branch
+
+```bash
+git checkout -b feature/your-feature
+```
+
+3. Commit changes
+
+```bash
+git commit -m "Add new feature"
+```
+
+4. Push
+
+```bash
+git push origin feature/your-feature
+```
+
+5. Create a Pull Request
+
+---
+
+# 🧪 Testing
+
+Backend
+
+```bash
+cd backend
+
+pytest
+```
+
+Frontend
+
+```bash
+npm run lint
+```
+
+---
+
+# 🚀 Deployment
+
+Frontend
+
+- Vercel
+
+Backend
+
+- Render / Railway
+
+Database
+
+- MongoDB Atlas
+
+---
+
+# 🌟 Why EduPilot?
+
+Unlike traditional learning platforms, EduPilot combines Artificial Intelligence with personalized education.
+
+Students receive:
+
+- Personalized Roadmaps
+- AI Tutor
+- Smart Notes
+- Adaptive Quizzes
+- Progress Analytics
+- Intelligent Recommendations
+
+All in one integrated platform.
+
+---
+
+# 👨‍💻 Developed By
+
+**Team EduPilot**
+
+AI-Powered Personalized Learning Platform
+
+---
+
+# 📜 License
+
+This project is licensed under the MIT License.
+
+---
+
+<div align="center">
+
+## ⭐ If you like this project, don't forget to give it a Star ⭐
+
+**Made with ❤️ using Next.js, FastAPI, MongoDB & Google Gemini AI**
+
+</div>
