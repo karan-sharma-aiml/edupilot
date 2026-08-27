@@ -2,7 +2,7 @@
 
 import { PageTransition } from '@/components/shared/page-transition';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -12,7 +12,6 @@ import { api } from '@/services/api';
 import { DashboardData, Topic } from '@/types';
 
 import { ProtectedRoute } from '@/components/shared/protected-route';
-import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { GlassCard } from '@/components/shared/glass-card';
 import { GradientText } from '@/components/shared/gradient-text';
 import { Target, Flame, Brain, Trophy, ArrowRight, AlertCircle, CheckCircle2, BarChart3, Gauge, Sparkles, Clock3, TrendingUp, ShieldCheck } from 'lucide-react';
@@ -47,10 +46,30 @@ export default function DashboardPage() {
     fetchDashboard();
   }, [studentId, router]);
 
+  const dashboardStats = useMemo(() => {
+    if (!data) return { avgScore: 0, chartData: [] as { name: string; score: number }[] };
+    return {
+      avgScore: data.quiz_scores.length > 0
+        ? Math.round(data.quiz_scores.reduce((acc, curr) => acc + (curr.score / curr.total), 0) / data.quiz_scores.length * 100)
+        : 0,
+      chartData: data.quiz_scores.map(s => ({
+        name: s.topic.substring(0, 15) + '...',
+        score: Math.round((s.score / s.total) * 100)
+      })),
+    };
+  }, [data]);
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner message="Loading your dashboard..." />
+      <div className="min-h-screen max-w-6xl mx-auto px-6 py-12 animate-pulse">
+        <div className="mb-12 flex items-end justify-between gap-5">
+          <div className="space-y-3"><div className="h-9 w-72 rounded bg-white/10" /><div className="h-4 w-56 rounded bg-white/5" /></div>
+          <div className="h-11 w-40 rounded-lg bg-white/10" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-28 rounded-xl bg-white/5" />)}
+        </div>
+        <div className="h-80 rounded-xl bg-white/5" />
       </div>
     );
   }
@@ -59,14 +78,7 @@ export default function DashboardPage() {
     return <div className="text-center p-12">Failed to load dashboard.</div>;
   }
 
-  const avgScore = data.quiz_scores.length > 0
-    ? Math.round(data.quiz_scores.reduce((acc, curr) => acc + (curr.score / curr.total), 0) / data.quiz_scores.length * 100)
-    : 0;
-
-  const chartData = data.quiz_scores.map(s => ({
-    name: s.topic.substring(0, 15) + '...',
-    score: Math.round((s.score / s.total) * 100)
-  }));
+  const { avgScore, chartData } = dashboardStats;
 
   return (
     <ProtectedRoute>
@@ -76,7 +88,7 @@ export default function DashboardPage() {
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
               <div>
                 <h1 className="text-3xl font-bold mb-2">Welcome back, <GradientText>{data.student.name}</GradientText></h1>
-                <p className="text-zinc-400">Here's your learning progress overview.</p>
+                <p className="text-zinc-400">Here&apos;s your learning progress overview.</p>
               </div>
               <Link
                 href={currentTopic ? `/learn/${studentId}/${encodeURIComponent(currentTopic.topic.title)}` : `/roadmap/${studentId}`}

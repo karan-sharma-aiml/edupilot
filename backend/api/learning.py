@@ -1,4 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
+import logging
+import traceback
 from schemas.requests import ExplainTopicRequest
 from schemas.responses import StandardResponse
 from services.gemini_service import explain_topic as gemini_explain_topic
@@ -7,6 +9,7 @@ from database import get_database
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 
 @router.post("/explain-topic", response_model=StandardResponse)
@@ -51,4 +54,8 @@ async def explain_topic_endpoint(req: Request, request: ExplainTopicRequest):
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception(
+            "Explain topic request failed for topic=%s", request.topic_title
+        )
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

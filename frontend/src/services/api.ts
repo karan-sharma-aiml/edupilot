@@ -3,8 +3,9 @@ import { useAuthStore } from '@/stores/auth-store';
 import type { DashboardData, Quiz, QuizResult, Roadmap, Topic, User, AuthTokens, ApiResponse, ChatMessage, NotesDocument } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const inFlightRequests = new Map<string, Promise<unknown>>();
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
+async function requestUncached<T>(url: string, options?: RequestInit): Promise<T> {
   const accessToken = Cookies.get('access_token');
   let res: Response;
 
@@ -67,6 +68,21 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
   const json: ApiResponse<T> = await res.json();
   return json.data;
+}
+
+function request<T>(url: string, options?: RequestInit): Promise<T> {
+  if (options?.method && options.method !== 'GET') {
+    return requestUncached<T>(url, options);
+  }
+
+  const existing = inFlightRequests.get(url);
+  if (existing) return existing as Promise<T>;
+
+  const pending = requestUncached<T>(url, options).finally(() => {
+    inFlightRequests.delete(url);
+  });
+  inFlightRequests.set(url, pending);
+  return pending;
 }
 
 export const api = {

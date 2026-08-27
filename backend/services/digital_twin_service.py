@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -98,7 +99,7 @@ async def generate_learning_dna_from_ai(payload: dict) -> dict:
     """
 
     try:
-        response = model.generate_content(prompt)
+        response = await asyncio.to_thread(model.generate_content, prompt)
         data = json.loads(_clean_json(response.text))
         required_fields = {
             "learning_personality",
@@ -355,20 +356,27 @@ async def sync_learning_dna(student_id: str, user_id: str | None = None) -> dict
     if student is None:
         return None
 
+    cached = await db.learning_dna.find_one({"student_id": student_id})
+    if cached:
+        updated_at = cached.get("updated_at")
+        if isinstance(updated_at, datetime):
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+            age_seconds = (datetime.now(timezone.utc) - updated_at).total_seconds()
+            if age_seconds < 300:
+                cached["_id"] = str(cached["_id"])
+                return cached
+
     roadmap = await db.roadmaps.find_one({"student_id": student_id})
-    quiz_scores = (
-        await db.quiz_results.find({"student_id": student_id})
+    quiz_scores, sessions, notes_count, recommendation_count = await asyncio.gather(
+        db.quiz_results.find({"student_id": student_id})
         .sort("created_at", -1)
-        .to_list(length=None)
-    )
-    sessions = (
-        await db.sessions.find({"student_id": student_id})
+        .to_list(length=None),
+        db.sessions.find({"student_id": student_id})
         .sort("started_at", -1)
-        .to_list(length=None)
-    )
-    notes_count = await db.notes.count_documents({"student_id": student_id})
-    recommendation_count = await db.recommendations.count_documents(
-        {"student_id": student_id}
+        .to_list(length=None),
+        db.notes.count_documents({"student_id": student_id}),
+        db.recommendations.count_documents({"student_id": student_id}),
     )
 
     weak_topics = []

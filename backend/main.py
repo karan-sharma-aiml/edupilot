@@ -3,33 +3,60 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from contextlib import asynccontextmanager
-from database import db
+import logging
+from database import db, ensure_index
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import settings
 from api import roadmap, learning, quiz, dashboard, auth, ai
 from middleware.auth_middleware import AuthMiddleware
 
+logger = logging.getLogger("edupilot.mongodb")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.client = AsyncIOMotorClient(settings.MONGODB_URI)
-    # Create indexes
-    database = db.client[settings.MONGODB_DB]
-    await database.users.create_index("email", unique=True)
-    await database.users.create_index("verification_token")
-    await database.users.create_index("reset_token")
-    await database.roadmaps.create_index("student_id")  # Keep legacy
-    await database.roadmaps.create_index("user_id")  # New
-    await database.sessions.create_index("student_id")
-    await database.sessions.create_index("user_id")
-    await database.quiz_results.create_index("student_id")
-    await database.quiz_results.create_index("user_id")
-    await database.notes.create_index("student_id")
-    await database.notes.create_index("user_id")
-    await database.learning_dna.create_index("student_id")
-    await database.learning_dna.create_index("user_id")
+    try:
+        db.client = AsyncIOMotorClient(
+            settings.MONGODB_URI,
+            serverSelectionTimeoutMS=10000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=10000,
+        )
+        database = db.client[settings.MONGODB_DB]
+        await database.command("ping")
+        logger.info("✅ MongoDB Connected: database=%s", settings.MONGODB_DB)
+
+        await ensure_index(database.users, [("email", 1)], unique=True)
+        await ensure_index(database.users, [("verification_token", 1)])
+        await ensure_index(database.users, [("reset_token", 1)])
+        await ensure_index(database.roadmaps, [("student_id", 1)])
+        await ensure_index(database.roadmaps, [("user_id", 1)])
+        await ensure_index(database.sessions, [("student_id", 1)])
+        await ensure_index(database.sessions, [("user_id", 1)])
+        await ensure_index(database.quiz_results, [("student_id", 1)])
+        await ensure_index(database.quiz_results, [("user_id", 1)])
+        await ensure_index(database.notes, [("student_id", 1)])
+        await ensure_index(database.notes, [("user_id", 1)])
+        await ensure_index(database.learning_dna, [("student_id", 1)])
+        await ensure_index(database.learning_dna, [("user_id", 1)])
+        await ensure_index(database.ai_cache, [("key", 1)], unique=True)
+        await ensure_index(
+            database.quiz_results, [("student_id", 1), ("created_at", -1)]
+        )
+        await ensure_index(
+            database.recommendations, [("student_id", 1), ("created_at", -1)]
+        )
+        await ensure_index(database.sessions, [("student_id", 1), ("started_at", -1)])
+        await ensure_index(database.learning_dna, [("student_id", 1)], unique=True)
+    except Exception:
+        logger.exception("❌ MongoDB Connection Failed")
+        if db.client is not None:
+            db.client.close()
+        db.client = None
+        raise
     yield
     db.client.close()
+    db.client = None
 
 
 app = FastAPI(title="EduPilot API", lifespan=lifespan)
@@ -57,6 +84,18 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={"success": False, "message": exc.detail, "data": None},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception for %s %s", request.method, request.url.path)
+    import traceback
+
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "message": str(exc), "data": None},
     )
 
 

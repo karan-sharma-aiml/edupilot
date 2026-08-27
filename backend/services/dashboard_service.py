@@ -1,18 +1,36 @@
 from database import get_database
 from bson import ObjectId
+import asyncio
 from datetime import datetime, timezone
+import logging
 from services.digital_twin_service import sync_learning_dna
 from services.roadmap_service import get_roadmap, get_student
 
+logger = logging.getLogger(__name__)
+
 
 async def get_dashboard(student_id: str) -> dict:
+    logger.info("Loading dashboard for student_id=%s", student_id)
     db = get_database()
-    student = await get_student(student_id)
+    student, roadmap = await asyncio.gather(
+        get_student(student_id), get_roadmap(student_id)
+    )
     if not student:
         raise ValueError("Student not found")
 
-    roadmap = await get_roadmap(student_id)
-    learning_dna = await sync_learning_dna(student_id, student.get("user_id"))
+    learning_dna, quiz_scores, next_recommendation, sessions = await asyncio.gather(
+        sync_learning_dna(student_id, student.get("user_id")),
+        db.quiz_results.find({"student_id": student_id})
+        .sort("created_at", -1)
+        .to_list(length=None),
+        db.recommendations.find({"student_id": student_id})
+        .sort("created_at", -1)
+        .limit(1)
+        .to_list(length=1),
+        db.sessions.find({"student_id": student_id})
+        .sort("started_at", -1)
+        .to_list(length=None),
+    )
 
     total_topics = 0
     completed_topics_count = 0
@@ -30,15 +48,9 @@ async def get_dashboard(student_id: str) -> dict:
         (completed_topics_count / total_topics * 100) if total_topics > 0 else 0
     )
 
-    quiz_cursor = db.quiz_results.find({"student_id": student_id}).sort(
-        "created_at", -1
-    )
-    quiz_scores = []
     weak_topics = []
-
-    async for q in quiz_cursor:
+    for q in quiz_scores:
         q["_id"] = str(q["_id"])
-        quiz_scores.append(q)
         score = q.get("score", 0)
         total = q.get("total", 0)
         topic_title = q.get("topic_title")
@@ -46,21 +58,10 @@ async def get_dashboard(student_id: str) -> dict:
             if topic_title not in weak_topics:
                 weak_topics.append(topic_title)
 
-    rec_cursor = (
-        db.recommendations.find({"student_id": student_id})
-        .sort("created_at", -1)
-        .limit(1)
-    )
-    next_recommendation = None
-    async for r in rec_cursor:
+    next_recommendation = next_recommendation[0] if next_recommendation else None
+    if next_recommendation:
+        r = next_recommendation
         r["_id"] = str(r["_id"])
-        next_recommendation = r
-
-    sessions = (
-        await db.sessions.find({"student_id": student_id})
-        .sort("started_at", -1)
-        .to_list(None)
-    )
     for session in sessions:
         if session.get("_id"):
             session["_id"] = str(session["_id"])

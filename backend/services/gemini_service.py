@@ -1,9 +1,18 @@
-import google.generativeai as genai
+import asyncio
+import hashlib
 import json
-import re
+import logging
+
+import google.generativeai as genai
+
+from database import get_database
 from config import settings
 
 genai.configure(api_key=settings.GEMINI_API_KEY)
+
+GEMINI_MODEL = settings.GEMINI_MODEL
+logger = logging.getLogger(__name__)
+_explanation_locks: dict[str, asyncio.Lock] = {}
 
 
 def _clean_json(response_text: str) -> str:
@@ -22,7 +31,7 @@ async def generate_roadmap(
     name: str, goal: str, daily_study_time: int, skill_level: str, learning_style: str
 ) -> dict:
     model = genai.GenerativeModel(
-        "gemini-3.5-flash",
+        GEMINI_MODEL,
         generation_config={
             "temperature": 0.7,
             "response_mime_type": "application/json",
@@ -61,7 +70,7 @@ async def generate_roadmap(
         ]
     }}
     """
-    response = model.generate_content(prompt)
+    response = await asyncio.to_thread(model.generate_content, prompt)
     try:
         return json.loads(_clean_json(response.text))
     except Exception as e:
@@ -69,28 +78,54 @@ async def generate_roadmap(
 
 
 async def explain_topic(topic_title: str, context: str, skill_level: str) -> str:
-    model = genai.GenerativeModel(
-        "gemini-3.5-flash", generation_config={"temperature": 0.7}
-    )
-    prompt = f"""
-    Explain the topic: "{topic_title}".
-    Target skill level: {skill_level}.
-    Context/Additional info: {context}
-    
-    Please provide:
-    1. A simple explanation.
-    2. A real-world example.
-    3. A step-by-step breakdown.
-    4. If it is a coding topic, include sample code.
-    Format the output nicely in Markdown.
-    """
-    response = model.generate_content(prompt)
-    return response.text
+    cache_key = hashlib.sha256(
+        f"{GEMINI_MODEL}\0{topic_title}\0{context}\0{skill_level}".encode()
+    ).hexdigest()
+    lock = _explanation_locks.setdefault(cache_key, asyncio.Lock())
+
+    async with lock:
+        db = get_database()
+        cached = await db.ai_cache.find_one({"key": cache_key}, {"_id": 0, "value": 1})
+        if isinstance(cached, dict) and isinstance(cached.get("value"), str):
+            return cached["value"]
+
+        model = genai.GenerativeModel(
+            GEMINI_MODEL, generation_config={"temperature": 0.7}
+        )
+        prompt = f"""
+        Explain the topic: "{topic_title}".
+        Target skill level: {skill_level}.
+        Context/Additional info: {context}
+
+        Please provide:
+        1. A simple explanation.
+        2. A real-world example.
+        3. A step-by-step breakdown.
+        4. If it is a coding topic, include sample code.
+        Format the output nicely in Markdown.
+        """
+        response = await asyncio.to_thread(model.generate_content, prompt)
+        explanation = response.text
+        if not explanation:
+            raise ValueError("Gemini returned an empty explanation")
+
+        await db.ai_cache.update_one(
+            {"key": cache_key},
+            {
+                "$set": {
+                    "value": explanation,
+                    "kind": "topic_explanation",
+                    "model": GEMINI_MODEL,
+                }
+            },
+            upsert=True,
+        )
+        return explanation
 
 
 async def generate_quiz(topic_title: str, skill_level: str) -> list[dict]:
     model = genai.GenerativeModel(
-        "gemini-3.5-flash",
+        GEMINI_MODEL,
         generation_config={
             "temperature": 0.7,
             "response_mime_type": "application/json",
@@ -106,7 +141,7 @@ async def generate_quiz(topic_title: str, skill_level: str) -> list[dict]:
     - "correct_answer": integer (0 to 3) representing the index of the correct option
     - "explanation": string explaining why the answer is correct
     """
-    response = model.generate_content(prompt)
+    response = await asyncio.to_thread(model.generate_content, prompt)
     try:
         data = json.loads(_clean_json(response.text))
         if not isinstance(data, list):
@@ -118,7 +153,7 @@ async def generate_quiz(topic_title: str, skill_level: str) -> list[dict]:
 
 async def generate_recommendation(topic_title: str, score: int, total: int) -> dict:
     model = genai.GenerativeModel(
-        "gemini-3.5-flash",
+        GEMINI_MODEL,
         generation_config={
             "temperature": 0.7,
             "response_mime_type": "application/json",
@@ -136,7 +171,7 @@ async def generate_recommendation(topic_title: str, score: int, total: int) -> d
     - "difficulty": string (beginner, intermediate, or advanced)
     - "reason": string (a short encouraging reason for this recommendation)
     """
-    response = model.generate_content(prompt)
+    response = await asyncio.to_thread(model.generate_content, prompt)
     try:
         return json.loads(_clean_json(response.text))
     except Exception as e:
@@ -144,9 +179,7 @@ async def generate_recommendation(topic_title: str, score: int, total: int) -> d
 
 
 async def chat_response(message: str, history: list[dict], context: str = "") -> str:
-    model = genai.GenerativeModel(
-        "gemini-3.5-flash", generation_config={"temperature": 0.7}
-    )
+    model = genai.GenerativeModel(GEMINI_MODEL, generation_config={"temperature": 0.7})
     # Build conversation history for context
     history_text = "\n".join(
         [f"{m['role']}: {m['content']}" for m in history[-10:]]
@@ -167,14 +200,12 @@ Conversation history:
 Student's message: {message}
 
 Provide a helpful, encouraging response. Use markdown formatting. If the student asks about a topic, explain it clearly with examples."""
-    response = model.generate_content(prompt)
+    response = await asyncio.to_thread(model.generate_content, prompt)
     return response.text
 
 
 async def generate_notes(topic: str, skill_level: str) -> str:
-    model = genai.GenerativeModel(
-        "gemini-3.5-flash", generation_config={"temperature": 0.6}
-    )
+    model = genai.GenerativeModel(GEMINI_MODEL, generation_config={"temperature": 0.6})
     prompt = f"""You are EduPilot, an expert teacher creating study notes for a {skill_level} student.
 Create structured Markdown notes for: "{topic}".
 Use exactly these sections:
@@ -185,5 +216,5 @@ Use exactly these sections:
 ## Important Interview Questions
 
 Use headings, bullet points, examples, important formulas when applicable, exam tips, and clear revision summaries. Keep the content accurate and practical. Do not answer in one paragraph."""
-    response = model.generate_content(prompt)
+    response = await asyncio.to_thread(model.generate_content, prompt)
     return response.text

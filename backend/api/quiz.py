@@ -1,4 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
+import logging
+import traceback
 from schemas.requests import GenerateQuizRequest, SubmitQuizRequest
 from schemas.responses import StandardResponse
 from services.gemini_service import generate_quiz as gemini_gen_quiz
@@ -6,6 +8,7 @@ from services.quiz_service import create_quiz, submit_quiz as process_submit_qui
 from services.roadmap_service import get_student, resolve_student_id
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 
 @router.post("/generate-quiz", response_model=StandardResponse)
@@ -35,6 +38,8 @@ async def generate_quiz_endpoint(req: Request, request: GenerateQuizRequest):
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Generate quiz request failed")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
