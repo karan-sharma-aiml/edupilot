@@ -21,6 +21,7 @@ if settings.GEMINI_API_KEY:
 GEMINI_MODEL = settings.GEMINI_MODEL
 logger = logging.getLogger(__name__)
 _explanation_locks: dict[str, asyncio.Lock] = {}
+_quiz_locks: dict[str, asyncio.Lock] = {}
 
 
 def _is_quota_error(exc: Exception) -> bool:
@@ -64,7 +65,11 @@ async def _call_openrouter(
     }
     if generation_config:
         payload["temperature"] = generation_config.get("temperature", 0.7)
-        if generation_config.get("response_mime_type") == "application/json":
+        if generation_config.get(
+            "response_mime_type"
+        ) == "application/json" and generation_config.get(
+            "openrouter_json_object", True
+        ):
             payload["response_format"] = {"type": "json_object"}
 
     url = f"{settings.OPENROUTER_BASE_URL.rstrip('/')}/chat/completions"
@@ -81,11 +86,13 @@ async def _call_openrouter(
         method="POST",
     )
 
-    try:
+    def send_request() -> str:
         with request.urlopen(req, timeout=60) as response:
             body = response.read().decode("utf-8")
-            result = json.loads(body)
-            return _extract_openrouter_text(result)
+            return _extract_openrouter_text(json.loads(body))
+
+    try:
+        return await asyncio.to_thread(send_request)
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         payload_detail = detail.strip() or str(exc)
@@ -137,6 +144,71 @@ def _clean_json(response_text: str) -> str:
     if response_text.endswith("```"):
         response_text = response_text[:-3]
     return response_text.strip()
+
+
+def _parse_quiz_questions(response_text: str) -> list[dict]:
+    """Parse and validate provider output before it reaches the API."""
+    cleaned = _clean_json(response_text)
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+        if start < 0 or end <= start:
+            raise ValueError("Expected a JSON array") from None
+        data = json.loads(cleaned[start : end + 1])
+
+    if isinstance(data, dict):
+        for key in ("questions", "quiz", "items"):
+            if isinstance(data.get(key), list):
+                data = data[key]
+                break
+    if not isinstance(data, list) or not data:
+        raise ValueError("Expected a non-empty JSON array")
+
+    normalized = []
+    for question in data:
+        if not isinstance(question, dict):
+            raise ValueError("Each quiz question must be an object")
+        options = question.get("options")
+        answer = question.get("correct_answer", question.get("answer"))
+        if (
+            not isinstance(question.get("question"), str)
+            or not isinstance(options, list)
+            or len(options) != 4
+            or not all(isinstance(option, str) for option in options)
+            or not isinstance(answer, int)
+            or not 0 <= answer < len(options)
+        ):
+            raise ValueError("Invalid quiz question format")
+        normalized.append(
+            {
+                "question": question["question"],
+                "options": options,
+                "correct_answer": answer,
+                "explanation": str(question.get("explanation", "")),
+            }
+        )
+    return normalized
+
+
+async def _repair_quiz_response(response_text: str) -> list[dict]:
+    repair_prompt = f"""
+Convert the following attempted quiz response into valid JSON.
+Return only a JSON array of question objects. Do not use markdown or code fences.
+Each object must contain question (string), options (exactly 4 strings),
+correct_answer (integer from 0 to 3), and explanation (string).
+
+Attempted response:
+{response_text}
+"""
+    repaired = await _generate_with_fallback(
+        repair_prompt,
+        model_name=GEMINI_MODEL,
+        generation_config={"temperature": 0, "openrouter_json_object": False},
+        task="quiz response repair",
+    )
+    return _parse_quiz_questions(repaired)
 
 
 async def generate_roadmap(
@@ -241,6 +313,11 @@ async def explain_topic(topic_title: str, context: str, skill_level: str) -> str
 
 
 async def generate_quiz(topic_title: str, skill_level: str) -> list[dict]:
+    cache_key = hashlib.sha256(
+        f"quiz\0{GEMINI_MODEL}\0{topic_title}\0{skill_level}".encode()
+    ).hexdigest()
+    lock = _quiz_locks.setdefault(cache_key, asyncio.Lock())
+
     prompt = f"""
     Generate exactly 5 multiple choice questions for the topic: "{topic_title}".
     Target skill level: {skill_level}.
@@ -251,22 +328,48 @@ async def generate_quiz(topic_title: str, skill_level: str) -> list[dict]:
     - "correct_answer": integer (0 to 3) representing the index of the correct option
     - "explanation": string explaining why the answer is correct
     """
-    try:
-        response_text = await _generate_with_fallback(
-            prompt,
-            model_name=GEMINI_MODEL,
-            generation_config={
-                "temperature": 0.7,
-                "response_mime_type": "application/json",
-            },
-            task="quiz generation",
-        )
-        data = json.loads(_clean_json(response_text))
-        if not isinstance(data, list):
-            raise ValueError("Expected a JSON array")
-        return data
-    except Exception as e:
-        raise ValueError(f"Failed to generate quiz: {str(e)}")
+    async with lock:
+        try:
+            db = get_database()
+            cached = await db.ai_cache.find_one(
+                {"key": cache_key}, {"_id": 0, "value": 1}
+            )
+            if isinstance(cached, dict) and isinstance(cached.get("value"), list):
+                return _parse_quiz_questions(json.dumps(cached["value"]))
+        except RuntimeError:
+            db = None
+
+        try:
+            response_text = await _generate_with_fallback(
+                prompt,
+                model_name=GEMINI_MODEL,
+                generation_config={
+                    "temperature": 0.7,
+                    "response_mime_type": "application/json",
+                    "openrouter_json_object": False,
+                },
+                task="quiz generation",
+            )
+            try:
+                questions = _parse_quiz_questions(response_text)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                logger.warning("Quiz provider returned invalid JSON; attempting repair")
+                questions = await _repair_quiz_response(response_text)
+            if db is not None:
+                await db.ai_cache.update_one(
+                    {"key": cache_key},
+                    {
+                        "$set": {
+                            "value": questions,
+                            "kind": "quiz_questions",
+                            "model": GEMINI_MODEL,
+                        }
+                    },
+                    upsert=True,
+                )
+            return questions
+        except Exception as e:
+            raise ValueError(f"Failed to generate quiz: {str(e)}")
 
 
 async def generate_recommendation(topic_title: str, score: int, total: int) -> dict:

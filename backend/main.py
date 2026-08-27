@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.gzip import GZipMiddleware
 
 from api import ai, auth, dashboard, learning, quiz, roadmap
 from config import settings
@@ -73,6 +74,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="EduPilot API", lifespan=lifespan)
 
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,

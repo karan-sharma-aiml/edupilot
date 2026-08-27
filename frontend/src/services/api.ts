@@ -8,6 +8,7 @@ if (!API_URL) {
   console.warn('NEXT_PUBLIC_API_URL is not set. Configure the backend URL in your environment variables.');
 }
 const inFlightRequests = new Map<string, Promise<unknown>>();
+const inFlightQuizRequests = new Map<string, Promise<Quiz>>();
 
 async function requestUncached<T>(url: string, options?: RequestInit): Promise<T> {
   const accessToken = Cookies.get('access_token');
@@ -184,11 +185,23 @@ export const api = {
   },
 
   async generateQuiz(studentId: string, topicTitle: string): Promise<Quiz> {
-    const data = await request<any>(`${API_URL}/api/generate-quiz`, {
+    const key = `${studentId}\0${topicTitle}`;
+    const existing = inFlightQuizRequests.get(key);
+    if (existing) return existing;
+
+    const pending = request<any>(`${API_URL}/api/generate-quiz`, {
       method: 'POST',
       body: JSON.stringify({ student_id: studentId, topic_title: topicTitle }),
+    }).then(data => ({
+      id: data._id || data.id,
+      student_id: data.student_id,
+      topic_title: data.topic_title,
+      questions: data.questions,
+    })).finally(() => {
+      inFlightQuizRequests.delete(key);
     });
-    return { id: data._id || data.id, student_id: data.student_id, topic_title: data.topic_title, questions: data.questions };
+    inFlightQuizRequests.set(key, pending);
+    return pending;
   },
 
   async submitQuiz(studentId: string, quizId: string, answers: { question_index: number; selected_answer: number }[]): Promise<QuizResult> {
