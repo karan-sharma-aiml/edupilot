@@ -21,6 +21,13 @@ class QuizGenerationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _parse_quiz_questions('[{"question": "Incomplete", "options": ["A", "B"]}]')
 
+    def test_parser_normalizes_letter_answer(self):
+        result = _parse_quiz_questions(
+            'The result is: [{"question":"Q","options":["A","B","C","D"],"correct_answer":"C"}] done.'
+        )
+
+        self.assertEqual(result[0]["correct_answer"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

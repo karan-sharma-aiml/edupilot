@@ -45,7 +45,6 @@ async def generate_learning_dna_from_ai(payload: dict) -> dict:
         "gemini-3.5-flash",
         generation_config={
             "temperature": 0.6,
-            "response_mime_type": "application/json",
         },
     )
 

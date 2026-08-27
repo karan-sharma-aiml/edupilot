@@ -37,6 +37,12 @@ async def generate_quiz_endpoint(req: Request, request: GenerateQuizRequest):
         )
     except HTTPException:
         raise
+    except ValueError as e:
+        logger.error("Quiz generation returned unusable AI output: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail="Quiz generation failed because the AI returned invalid data. Please try again.",
+        ) from e
     except RuntimeError as e:
         message = str(e).lower()
         if any(

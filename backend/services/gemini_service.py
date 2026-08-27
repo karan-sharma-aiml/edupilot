@@ -65,12 +65,6 @@ async def _call_openrouter(
     }
     if generation_config:
         payload["temperature"] = generation_config.get("temperature", 0.7)
-        if generation_config.get(
-            "response_mime_type"
-        ) == "application/json" and generation_config.get(
-            "openrouter_json_object", True
-        ):
-            payload["response_format"] = {"type": "json_object"}
 
     url = f"{settings.OPENROUTER_BASE_URL.rstrip('/')}/chat/completions"
     data = json.dumps(payload).encode("utf-8")
@@ -146,17 +140,29 @@ def _clean_json(response_text: str) -> str:
     return response_text.strip()
 
 
+def _extract_first_json_array(response_text: str) -> str:
+    decoder = json.JSONDecoder()
+    for start, character in enumerate(response_text):
+        if character != "[":
+            continue
+        try:
+            _, end = decoder.raw_decode(response_text[start:])
+            return response_text[start : start + end]
+        except json.JSONDecodeError:
+            continue
+    raise ValueError("Expected a JSON array")
+
+
 def _parse_quiz_questions(response_text: str) -> list[dict]:
     """Parse and validate provider output before it reaches the API."""
+    logger.info("Quiz raw AI response: %s", response_text)
     cleaned = _clean_json(response_text)
+    logger.info("Quiz cleaned AI response: %s", cleaned)
     try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError:
-        start = cleaned.find("[")
-        end = cleaned.rfind("]")
-        if start < 0 or end <= start:
-            raise ValueError("Expected a JSON array") from None
-        data = json.loads(cleaned[start : end + 1])
+        data = json.loads(_extract_first_json_array(cleaned))
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.exception("Quiz JSON parsing failed: %s", exc)
+        raise ValueError("Expected a valid JSON array") from exc
 
     if isinstance(data, dict):
         for key in ("questions", "quiz", "items"):
@@ -172,6 +178,8 @@ def _parse_quiz_questions(response_text: str) -> list[dict]:
             raise ValueError("Each quiz question must be an object")
         options = question.get("options")
         answer = question.get("correct_answer", question.get("answer"))
+        if isinstance(answer, str) and len(answer) == 1:
+            answer = ord(answer.upper()) - ord("A")
         if (
             not isinstance(question.get("question"), str)
             or not isinstance(options, list)
@@ -189,6 +197,7 @@ def _parse_quiz_questions(response_text: str) -> list[dict]:
                 "explanation": str(question.get("explanation", "")),
             }
         )
+    logger.info("Quiz parsed JSON: %s", normalized)
     return normalized
 
 
@@ -197,7 +206,7 @@ async def _repair_quiz_response(response_text: str) -> list[dict]:
 Convert the following attempted quiz response into valid JSON.
 Return only a JSON array of question objects. Do not use markdown or code fences.
 Each object must contain question (string), options (exactly 4 strings),
-correct_answer (integer from 0 to 3), and explanation (string).
+correct_answer (one of A, B, C, or D), and no other fields are required.
 
 Attempted response:
 {response_text}
@@ -205,7 +214,7 @@ Attempted response:
     repaired = await _generate_with_fallback(
         repair_prompt,
         model_name=GEMINI_MODEL,
-        generation_config={"temperature": 0, "openrouter_json_object": False},
+        generation_config={"temperature": 0},
         task="quiz response repair",
     )
     return _parse_quiz_questions(repaired)
@@ -253,7 +262,6 @@ async def generate_roadmap(
             model_name=GEMINI_MODEL,
             generation_config={
                 "temperature": 0.7,
-                "response_mime_type": "application/json",
             },
             task="roadmap generation",
         )
@@ -325,8 +333,9 @@ async def generate_quiz(topic_title: str, skill_level: str) -> list[dict]:
     Return a JSON array of objects, where each object has:
     - "question": string
     - "options": array of exactly 4 strings
-    - "correct_answer": integer (0 to 3) representing the index of the correct option
-    - "explanation": string explaining why the answer is correct
+    - "correct_answer": one of "A", "B", "C", or "D"
+
+    Return ONLY valid JSON. No markdown, no explanation, and no ```json blocks.
     """
     async with lock:
         try:
@@ -345,8 +354,6 @@ async def generate_quiz(topic_title: str, skill_level: str) -> list[dict]:
                 model_name=GEMINI_MODEL,
                 generation_config={
                     "temperature": 0.7,
-                    "response_mime_type": "application/json",
-                    "openrouter_json_object": False,
                 },
                 task="quiz generation",
             )
@@ -368,8 +375,11 @@ async def generate_quiz(topic_title: str, skill_level: str) -> list[dict]:
                     upsert=True,
                 )
             return questions
+        except RuntimeError:
+            raise
         except Exception as e:
-            raise ValueError(f"Failed to generate quiz: {str(e)}")
+            logger.exception("Quiz generation failed after repair attempt")
+            raise ValueError(f"Failed to generate quiz: {str(e)}") from e
 
 
 async def generate_recommendation(topic_title: str, score: int, total: int) -> dict:
@@ -391,7 +401,6 @@ async def generate_recommendation(topic_title: str, score: int, total: int) -> d
             model_name=GEMINI_MODEL,
             generation_config={
                 "temperature": 0.7,
-                "response_mime_type": "application/json",
             },
             task="recommendation generation",
         )
