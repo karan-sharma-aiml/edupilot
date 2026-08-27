@@ -2,21 +2,133 @@ import asyncio
 import hashlib
 import json
 import logging
+from urllib import error, request
 
 import google.generativeai as genai
 
-from database import get_database
 from config import settings
+from database import get_database
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
+if settings.GEMINI_API_KEY:
+    try:
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Gemini configuration failed; AI features will fallback gracefully.",
+            exc_info=True,
+        )
 
 GEMINI_MODEL = settings.GEMINI_MODEL
 logger = logging.getLogger(__name__)
 _explanation_locks: dict[str, asyncio.Lock] = {}
 
 
+def _is_quota_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in ["quota", "rate limit", "429", "resource exhausted", "daily limit"]
+    )
+
+
+def _extract_openrouter_text(payload: dict) -> str:
+    choices = payload.get("choices") or []
+    if not choices:
+        raise ValueError("OpenRouter returned no choices")
+    first_choice = choices[0]
+    message = first_choice.get("message") or {}
+    content = message.get("content")
+    if isinstance(content, list):
+        return "\n".join(
+            part.get("text", "") for part in content if isinstance(part, dict)
+        )
+    if isinstance(content, str):
+        return content
+    raise ValueError("OpenRouter response lacked usable content")
+
+
+async def _call_openrouter(
+    prompt: str,
+    *,
+    model_name: str,
+    generation_config: dict | None = None,
+) -> str:
+    if not settings.OPENROUTER_API_KEY:
+        raise RuntimeError(
+            "OpenRouter API key is missing. Configure OPENROUTER_API_KEY."
+        )
+
+    payload = {
+        "model": settings.OPENROUTER_MODEL or model_name,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if generation_config:
+        payload["temperature"] = generation_config.get("temperature", 0.7)
+        if generation_config.get("response_mime_type") == "application/json":
+            payload["response_format"] = {"type": "json_object"}
+
+    url = f"{settings.OPENROUTER_BASE_URL.rstrip('/')}/chat/completions"
+    data = json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": settings.BACKEND_URL or "https://example.com",
+            "X-Title": "EduPilot",
+        },
+        method="POST",
+    )
+
+    try:
+        with request.urlopen(req, timeout=60) as response:
+            body = response.read().decode("utf-8")
+            result = json.loads(body)
+            return _extract_openrouter_text(result)
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        payload_detail = detail.strip() or str(exc)
+        if exc.code == 429:
+            raise RuntimeError(f"AI provider quota exceeded: {payload_detail}") from exc
+        raise RuntimeError(
+            f"OpenRouter request failed ({exc.code}): {payload_detail}"
+        ) from exc
+
+
+async def _generate_with_fallback(
+    prompt: str,
+    *,
+    model_name: str,
+    generation_config: dict | None = None,
+    task: str = "AI generation",
+):
+    if not settings.GEMINI_API_KEY:
+        raise RuntimeError(
+            "GEMINI_API_KEY is missing. Configure it in the backend environment."
+        )
+
+    try:
+        model = genai.GenerativeModel(
+            model_name, generation_config=generation_config or {}
+        )
+        response = await asyncio.to_thread(model.generate_content, prompt)
+        return response.text
+    except Exception as exc:
+        logger.warning("%s failed via Gemini: %s", task, exc)
+        if _is_quota_error(exc):
+            if settings.OPENROUTER_API_KEY:
+                logger.info("Falling back to OpenRouter for %s", task)
+                return await _call_openrouter(
+                    prompt, model_name=model_name, generation_config=generation_config
+                )
+            raise RuntimeError(
+                "AI provider quota exceeded. Please try again later."
+            ) from exc
+        raise
+
+
 def _clean_json(response_text: str) -> str:
-    # Strip markdown code fences if present
     response_text = response_text.strip()
     if response_text.startswith("```json"):
         response_text = response_text[7:]
@@ -30,20 +142,13 @@ def _clean_json(response_text: str) -> str:
 async def generate_roadmap(
     name: str, goal: str, daily_study_time: int, skill_level: str, learning_style: str
 ) -> dict:
-    model = genai.GenerativeModel(
-        GEMINI_MODEL,
-        generation_config={
-            "temperature": 0.7,
-            "response_mime_type": "application/json",
-        },
-    )
     prompt = f"""
     Generate a structured weekly learning roadmap for a student named {name}.
     Goal: {goal}
     Daily study time: {daily_study_time} minutes
     Skill level: {skill_level}
     Learning style: {learning_style}
-    
+
     Return a JSON object with the following structure:
     {{
         "total_weeks": int,
@@ -70,9 +175,19 @@ async def generate_roadmap(
         ]
     }}
     """
-    response = await asyncio.to_thread(model.generate_content, prompt)
     try:
-        return json.loads(_clean_json(response.text))
+        response_text = await _generate_with_fallback(
+            prompt,
+            model_name=GEMINI_MODEL,
+            generation_config={
+                "temperature": 0.7,
+                "response_mime_type": "application/json",
+            },
+            task="roadmap generation",
+        )
+        return json.loads(_clean_json(response_text))
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
     except Exception as e:
         raise ValueError(f"Failed to generate roadmap: {str(e)}")
 
@@ -89,9 +204,6 @@ async def explain_topic(topic_title: str, context: str, skill_level: str) -> str
         if isinstance(cached, dict) and isinstance(cached.get("value"), str):
             return cached["value"]
 
-        model = genai.GenerativeModel(
-            GEMINI_MODEL, generation_config={"temperature": 0.7}
-        )
         prompt = f"""
         Explain the topic: "{topic_title}".
         Target skill level: {skill_level}.
@@ -104,8 +216,13 @@ async def explain_topic(topic_title: str, context: str, skill_level: str) -> str
         4. If it is a coding topic, include sample code.
         Format the output nicely in Markdown.
         """
-        response = await asyncio.to_thread(model.generate_content, prompt)
-        explanation = response.text
+        response_text = await _generate_with_fallback(
+            prompt,
+            model_name=GEMINI_MODEL,
+            generation_config={"temperature": 0.7},
+            task="topic explanation",
+        )
+        explanation = response_text
         if not explanation:
             raise ValueError("Gemini returned an empty explanation")
 
@@ -124,26 +241,27 @@ async def explain_topic(topic_title: str, context: str, skill_level: str) -> str
 
 
 async def generate_quiz(topic_title: str, skill_level: str) -> list[dict]:
-    model = genai.GenerativeModel(
-        GEMINI_MODEL,
-        generation_config={
-            "temperature": 0.7,
-            "response_mime_type": "application/json",
-        },
-    )
     prompt = f"""
     Generate exactly 5 multiple choice questions for the topic: "{topic_title}".
     Target skill level: {skill_level}.
-    
+
     Return a JSON array of objects, where each object has:
     - "question": string
     - "options": array of exactly 4 strings
     - "correct_answer": integer (0 to 3) representing the index of the correct option
     - "explanation": string explaining why the answer is correct
     """
-    response = await asyncio.to_thread(model.generate_content, prompt)
     try:
-        data = json.loads(_clean_json(response.text))
+        response_text = await _generate_with_fallback(
+            prompt,
+            model_name=GEMINI_MODEL,
+            generation_config={
+                "temperature": 0.7,
+                "response_mime_type": "application/json",
+            },
+            task="quiz generation",
+        )
+        data = json.loads(_clean_json(response_text))
         if not isinstance(data, list):
             raise ValueError("Expected a JSON array")
         return data
@@ -152,18 +270,11 @@ async def generate_quiz(topic_title: str, skill_level: str) -> list[dict]:
 
 
 async def generate_recommendation(topic_title: str, score: int, total: int) -> dict:
-    model = genai.GenerativeModel(
-        GEMINI_MODEL,
-        generation_config={
-            "temperature": 0.7,
-            "response_mime_type": "application/json",
-        },
-    )
     percentage = (score / total) * 100 if total > 0 else 0
     prompt = f"""
     A student just took a quiz on "{topic_title}" and scored {score}/{total} ({percentage}%).
     If the score is below 60%, recommend revision. If the score is 60% or higher, recommend moving to the next topic or practicing.
-    
+
     Return a JSON object with:
     - "type": string (either "revision", "next_topic", or "practice")
     - "topic_title": string (the topic they should focus on)
@@ -171,19 +282,23 @@ async def generate_recommendation(topic_title: str, score: int, total: int) -> d
     - "difficulty": string (beginner, intermediate, or advanced)
     - "reason": string (a short encouraging reason for this recommendation)
     """
-    response = await asyncio.to_thread(model.generate_content, prompt)
     try:
-        return json.loads(_clean_json(response.text))
+        response_text = await _generate_with_fallback(
+            prompt,
+            model_name=GEMINI_MODEL,
+            generation_config={
+                "temperature": 0.7,
+                "response_mime_type": "application/json",
+            },
+            task="recommendation generation",
+        )
+        return json.loads(_clean_json(response_text))
     except Exception as e:
         raise ValueError(f"Failed to generate recommendation: {str(e)}")
 
 
 async def chat_response(message: str, history: list[dict], context: str = "") -> str:
-    model = genai.GenerativeModel(GEMINI_MODEL, generation_config={"temperature": 0.7})
-    # Build conversation history for context
-    history_text = "\n".join(
-        [f"{m['role']}: {m['content']}" for m in history[-10:]]
-    )  # Last 10 messages
+    history_text = "\n".join([f"{m['role']}: {m['content']}" for m in history[-10:]])
     prompt = f"""You are EduPilot, an expert educational mentor. Explain concepts at the student's skill level.
 Always respond in Markdown using exactly these sections, with more than one paragraph:
 ## 1. Explanation
@@ -193,19 +308,22 @@ Always respond in Markdown using exactly these sections, with more than one para
 ## 5. Quick Revision
 ## 6. Practice Question
 Include an analogy in the Real-world Example section and a concise summary in Quick Revision.
-    
+
 Conversation history:
 {history_text}
 
 Student's message: {message}
 
 Provide a helpful, encouraging response. Use markdown formatting. If the student asks about a topic, explain it clearly with examples."""
-    response = await asyncio.to_thread(model.generate_content, prompt)
-    return response.text
+    return await _generate_with_fallback(
+        prompt,
+        model_name=GEMINI_MODEL,
+        generation_config={"temperature": 0.7},
+        task="chat response",
+    )
 
 
 async def generate_notes(topic: str, skill_level: str) -> str:
-    model = genai.GenerativeModel(GEMINI_MODEL, generation_config={"temperature": 0.6})
     prompt = f"""You are EduPilot, an expert teacher creating study notes for a {skill_level} student.
 Create structured Markdown notes for: "{topic}".
 Use exactly these sections:
@@ -216,5 +334,9 @@ Use exactly these sections:
 ## Important Interview Questions
 
 Use headings, bullet points, examples, important formulas when applicable, exam tips, and clear revision summaries. Keep the content accurate and practical. Do not answer in one paragraph."""
-    response = await asyncio.to_thread(model.generate_content, prompt)
-    return response.text
+    return await _generate_with_fallback(
+        prompt,
+        model_name=GEMINI_MODEL,
+        generation_config={"temperature": 0.6},
+        task="note generation",
+    )

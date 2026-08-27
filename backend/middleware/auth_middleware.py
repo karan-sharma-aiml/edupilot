@@ -6,6 +6,7 @@ from services.auth_service import decode_token, get_user_by_id
 # Routes that don't need authentication
 PUBLIC_ROUTES = [
     "/",
+    "/health",
     "/docs",
     "/openapi.json",
     "/redoc",

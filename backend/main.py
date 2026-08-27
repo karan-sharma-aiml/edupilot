@@ -1,13 +1,15 @@
+from contextlib import asynccontextmanager
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from contextlib import asynccontextmanager
-import logging
-from database import db, ensure_index
 from motor.motor_asyncio import AsyncIOMotorClient
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from api import ai, auth, dashboard, learning, quiz, roadmap
 from config import settings
-from api import roadmap, learning, quiz, dashboard, auth, ai
+from database import db, ensure_index
 from middleware.auth_middleware import AuthMiddleware
 
 logger = logging.getLogger("edupilot.mongodb")
@@ -15,6 +17,14 @@ logger = logging.getLogger("edupilot.mongodb")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not settings.MONGODB_URI or not settings.MONGODB_DB:
+        logger.warning(
+            "MongoDB not configured for startup. Set MONGODB_URI and MONGODB_DB in the environment."
+        )
+        db.client = None
+        yield
+        return
+
     try:
         db.client = AsyncIOMotorClient(
             settings.MONGODB_URI,
@@ -49,29 +59,24 @@ async def lifespan(app: FastAPI):
         await ensure_index(database.sessions, [("student_id", 1), ("started_at", -1)])
         await ensure_index(database.learning_dna, [("student_id", 1)], unique=True)
     except Exception:
-        logger.exception("❌ MongoDB Connection Failed")
+        logger.exception(
+            "❌ MongoDB connection failed. Application will continue without a database connection."
+        )
         if db.client is not None:
             db.client.close()
         db.client = None
-        raise
     yield
-    db.client.close()
-    db.client = None
+    if db.client is not None:
+        db.client.close()
+        db.client = None
 
 
 app = FastAPI(title="EduPilot API", lifespan=lifespan)
 
-# Auth middleware
 app.add_middleware(AuthMiddleware)
-
-# CORS must wrap auth so rejected requests still include browser-readable CORS headers.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        settings.FRONTEND_URL,
-        "http://localhost:3000",
-        "http://localhost:3001",
-    ],
+    allow_origins=settings.get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -113,6 +118,11 @@ async def root():
     return {"status": "ok", "message": "EduPilot API is running"}
 
 
-@app.get("/api/health")
+@app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    return {"status": "ok"}
+
+
+@app.get("/api/health")
+async def api_health():
+    return {"status": "ok"}

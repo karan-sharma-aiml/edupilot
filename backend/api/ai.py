@@ -19,11 +19,23 @@ async def chat_endpoint(request: ChatRequest, req: Request):
         raise HTTPException(status_code=404, detail="Student not found")
     student = await get_student(student_id)
     history = [message.model_dump() for message in request.history[-10:]]
-    answer = await chat_response(
-        request.message,
-        history,
-        f"Current topic: {request.currentTopic or 'General learning'}\nSkill level: {student.get('skill_level', 'beginner')}",
-    )
+    try:
+        answer = await chat_response(
+            request.message,
+            history,
+            f"Current topic: {request.currentTopic or 'General learning'}\nSkill level: {student.get('skill_level', 'beginner')}",
+        )
+    except RuntimeError as exc:
+        message = str(exc).lower()
+        if any(
+            token in message
+            for token in ["quota", "rate limit", "429", "resource exhausted"]
+        ):
+            raise HTTPException(
+                status_code=429,
+                detail="AI provider quota exceeded. Please try again later.",
+            )
+        raise HTTPException(status_code=500, detail=str(exc))
     db = get_database()
     now = datetime.now(timezone.utc)
     await db.sessions.insert_one(
@@ -49,7 +61,21 @@ async def notes_endpoint(request: NotesRequest, req: Request):
     if not student_id:
         raise HTTPException(status_code=404, detail="Student not found")
     student = await get_student(student_id)
-    notes = await generate_notes(request.topic, student.get("skill_level", "beginner"))
+    try:
+        notes = await generate_notes(
+            request.topic, student.get("skill_level", "beginner")
+        )
+    except RuntimeError as exc:
+        message = str(exc).lower()
+        if any(
+            token in message
+            for token in ["quota", "rate limit", "429", "resource exhausted"]
+        ):
+            raise HTTPException(
+                status_code=429,
+                detail="AI provider quota exceeded. Please try again later.",
+            )
+        raise HTTPException(status_code=500, detail=str(exc))
     db = get_database()
     document = {
         "student_id": student_id,

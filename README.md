@@ -286,30 +286,28 @@ Install Python dependencies.
 pip install -r requirements.txt
 ```
 
-Create a `.env` file using the example.
+Create a `.env` file using the example and set your Render environment values.
 
 ```env
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-
-MONGODB_URI=mongodb://localhost:27017
-
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster-host>/edupilot?retryWrites=true&w=majority
 MONGODB_DB=edupilot
-
+FRONTEND_URL=https://your-frontend-domain
+BACKEND_URL=https://your-backend-domain
 JWT_SECRET_KEY=your_secret_key
-
 JWT_ALGORITHM=HS256
 ```
 
-Run the backend server.
+Run the backend server locally.
 
 ```bash
-py -m uvicorn main:app --reload
+py -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Backend runs at
+Render deployment should use:
 
-```
-http://localhost:8000
+```bash
+uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
 
 ---
@@ -335,7 +333,8 @@ Create
 ```
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8000/api
+# For production: NEXT_PUBLIC_API_URL=https://your-backend-domain/api
 ```
 
 Run frontend.
@@ -344,11 +343,7 @@ Run frontend.
 npm run dev
 ```
 
-Frontend runs at
-
-```
-http://localhost:3000
-```
+Use your backend URL in the frontend environment for production deployments.
 
 ---
 

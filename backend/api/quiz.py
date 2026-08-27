@@ -37,6 +37,17 @@ async def generate_quiz_endpoint(req: Request, request: GenerateQuizRequest):
         )
     except HTTPException:
         raise
+    except RuntimeError as e:
+        message = str(e).lower()
+        if any(
+            token in message
+            for token in ["quota", "rate limit", "429", "resource exhausted"]
+        ):
+            raise HTTPException(
+                status_code=429,
+                detail="AI provider quota exceeded. Please try again later.",
+            )
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.exception("Generate quiz request failed")
         traceback.print_exc()
@@ -61,5 +72,16 @@ async def submit_quiz_endpoint(req: Request, request: SubmitQuizRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        message = str(e).lower()
+        if any(
+            token in message
+            for token in ["quota", "rate limit", "429", "resource exhausted"]
+        ):
+            raise HTTPException(
+                status_code=429,
+                detail="AI provider quota exceeded. Please try again later.",
+            )
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

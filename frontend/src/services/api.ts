@@ -2,7 +2,11 @@ import Cookies from 'js-cookie';
 import { useAuthStore } from '@/stores/auth-store';
 import type { DashboardData, Quiz, QuizResult, Roadmap, Topic, User, AuthTokens, ApiResponse, ChatMessage, NotesDocument } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+if (!API_URL) {
+  console.warn('NEXT_PUBLIC_API_URL is not set. Configure the backend URL in your environment variables.');
+}
 const inFlightRequests = new Map<string, Promise<unknown>>();
 
 async function requestUncached<T>(url: string, options?: RequestInit): Promise<T> {

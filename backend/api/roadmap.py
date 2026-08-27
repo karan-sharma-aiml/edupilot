@@ -28,7 +28,6 @@ async def generate_roadmap_endpoint(req: Request, request: GenerateRoadmapReques
 
         student_id = await create_student(student_data, user_id)
 
-        # Call Gemini
         roadmap_json = await gemini_gen_roadmap(
             student_name,
             request.goal,
@@ -37,7 +36,6 @@ async def generate_roadmap_endpoint(req: Request, request: GenerateRoadmapReques
             request.learning_style,
         )
 
-        # Save roadmap
         roadmap = await create_roadmap(student_id, roadmap_json, user_id)
 
         return StandardResponse(
@@ -45,6 +43,17 @@ async def generate_roadmap_endpoint(req: Request, request: GenerateRoadmapReques
             data={"student_id": student_id, "roadmap": roadmap},
             message="Roadmap generated successfully",
         )
+    except RuntimeError as e:
+        message = str(e).lower()
+        if any(
+            token in message
+            for token in ["quota", "rate limit", "429", "resource exhausted"]
+        ):
+            raise HTTPException(
+                status_code=429,
+                detail="AI provider quota exceeded. Please try again later.",
+            )
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

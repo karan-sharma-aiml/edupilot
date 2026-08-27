@@ -53,6 +53,17 @@ async def explain_topic_endpoint(req: Request, request: ExplainTopicRequest):
         )
     except HTTPException:
         raise
+    except RuntimeError as e:
+        message = str(e).lower()
+        if any(
+            token in message
+            for token in ["quota", "rate limit", "429", "resource exhausted"]
+        ):
+            raise HTTPException(
+                status_code=429,
+                detail="AI provider quota exceeded. Please try again later.",
+            )
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.exception(
             "Explain topic request failed for topic=%s", request.topic_title

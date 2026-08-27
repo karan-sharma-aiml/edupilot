@@ -13,9 +13,9 @@ db = Database()
 
 
 def get_database():
-    if db.client is None:
+    if db.client is None or not settings.MONGODB_DB:
         raise RuntimeError(
-            "MongoDB client is not initialized; startup did not complete"
+            "MongoDB is unavailable. Set MONGODB_URI and MONGODB_DB environment variables before using database-backed routes."
         )
     return db.client[settings.MONGODB_DB]
 
