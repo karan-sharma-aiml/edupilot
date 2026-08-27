@@ -59,10 +59,12 @@ class Settings(BaseSettings):
     def get_allowed_origins(self) -> list[str]:
         origins = []
         for candidate in [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "https://edupilot-frontend-eight.vercel.app",
             self.FRONTEND_URL,
             self.BACKEND_URL,
             self.ALLOWED_ORIGINS,
-            "http://localhost:3000",
             "http://localhost:3001",
             "http://127.0.0.1:3000",
             "http://127.0.0.1:3001",
